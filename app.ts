@@ -6,6 +6,7 @@ import userRouter from "./routes/userRoutes";
 import noteRouter from "./routes/noteRoutes";
 import aiRouter from "./routes/aiRoutes";
 import AppError from "./utils/appError";
+import { sendErrorEmail, formatErrorForEmail } from "./utils/emailService";
 
 const app = express();
 
@@ -75,6 +76,52 @@ app.use((err: any, req: Request, res: Response, next: NextFunction) => {
       error: err,
     }),
   });
+});
+
+// Gestion des erreurs non rattrapées pour éviter les crashs
+process.on("uncaughtException", async (error) => {
+  console.error("❌ Erreur non rattrapée :", error);
+  console.error(
+    "Le serveur continue de fonctionner, mais cette erreur devrait être corrigée",
+  );
+
+  // Envoi d'un email de notification pour les erreurs
+  if (process.env.SMTP_USER && process.env.EMAIL_FROM) {
+    try {
+      const { subject, text, html } = formatErrorForEmail(error);
+      await sendErrorEmail(subject, text, html);
+    } catch (emailError) {
+      console.error(
+        "❌ Erreur lors de l'envoi de l'email de notification:",
+        emailError,
+      );
+    }
+  }
+});
+
+process.on("unhandledRejection", async (reason, promise) => {
+  console.error("❌ Promesse rejetée non gérée :", promise);
+  console.error("Raison:", reason);
+  console.error(
+    "Le serveur continue de fonctionner, mais cette erreur devrait être corrigée",
+  );
+
+  // Envoi d'un email de notification pour les erreurs
+  // Envoyer l'email si SMTP_USER et EMAIL_FROM sont définis
+  if (process.env.SMTP_USER && process.env.EMAIL_FROM) {
+    try {
+      // Convertir la raison en objet Error si ce n'est pas déjà le cas
+      const error =
+        reason instanceof Error ? reason : new Error(String(reason));
+      const { subject, text, html } = formatErrorForEmail(error);
+      await sendErrorEmail(subject, text, html);
+    } catch (emailError) {
+      console.error(
+        "❌ Erreur lors de l'envoi de l'email de notification:",
+        emailError,
+      );
+    }
+  }
 });
 
 export { app };

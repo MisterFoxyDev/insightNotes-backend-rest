@@ -1,6 +1,7 @@
 import { app } from "./app";
 import dotenv from "dotenv";
 import { PrismaClient } from "@prisma/client";
+import { testErrorEmail } from "./utils/testErrorEmail";
 
 // Initialiser dotenv au début de l'application
 dotenv.config();
@@ -26,4 +27,20 @@ async function testDatabaseConnection() {
 app.listen(port, async () => {
   console.log(`🚀 Serveur démarré sur le port ${port}`);
   await testDatabaseConnection();
+
+  // Test d'envoi d'email sur erreur avec la configuration port 587
+  if (process.env.NODE_ENV === "development") {
+    console.log(
+      "🧪 Test de notification par email (port 587) : une erreur sera générée dans 10 secondes...",
+    );
+    testErrorEmail(10000); // Générer une erreur après 10 secondes
+  }
+
+  // Commenter à nouveau après le test
+  // if (process.env.NODE_ENV === "development") {
+  //   console.log(
+  //     "🧪 Test de notification par email : une erreur sera générée dans 10 secondes...",
+  //   );
+  //   testErrorEmail(10000); // Générer une erreur après 10 secondes
+  // }
 });
