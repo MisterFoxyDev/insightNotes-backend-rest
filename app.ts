@@ -9,6 +9,7 @@ import AppError from "./utils/appError";
 
 const app = express();
 
+// Configuration CORS adaptative selon l'environnement
 const corsOptions: CorsOptions = {
   origin:
     process.env.NODE_ENV === "production"
@@ -19,7 +20,6 @@ const corsOptions: CorsOptions = {
   credentials: true,
 };
 
-// Logs pour vérifier la configuration CORS
 console.log("🔒 Configuration CORS:", {
   origin:
     process.env.NODE_ENV === "production"
@@ -63,9 +63,17 @@ app.use((err: any, req: Request, res: Response, next: NextFunction) => {
   err.statusCode = err.statusCode || 500;
   err.status = err.status || "error";
 
+  const isDevelopment = process.env.NODE_ENV === "development";
+
+  console.error("Erreur :", err);
+
   res.status(err.statusCode).json({
     status: err.status,
     message: err.message,
+    ...(isDevelopment && {
+      stack: err.stack,
+      error: err,
+    }),
   });
 });
 

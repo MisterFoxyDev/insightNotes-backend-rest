@@ -8,7 +8,7 @@ import AppError from "../utils/appError";
 
 const prisma = new PrismaClient();
 const JWT_SECRET = process.env.JWT_SECRET || "votre-secret-temporaire";
-const JWT_COOKIE_EXPIRES_IN = Number(process.env.JWT_COOKIE_EXPIRES_IN) || 30; // jours
+const JWT_COOKIE_EXPIRES_IN = Number(process.env.JWT_COOKIE_EXPIRES_IN) || 7; // jours
 const JWT_EXPIRES_IN = `${JWT_COOKIE_EXPIRES_IN}d`; // même durée que le cookie
 
 const signToken = (userId: bigint) => {
@@ -92,7 +92,11 @@ const authController = {
     } catch (error) {
       console.error("Erreur lors de la création de l'utilisateur:", error);
       return next(
-        new AppError("Erreur lors de la création de l'utilisateur", 400),
+        AppError.create(
+          "Erreur lors de la création de l'utilisateur",
+          400,
+          error,
+        ),
       );
     }
   }) as RequestHandler,
@@ -133,7 +137,7 @@ const authController = {
 
       createSendToken(user, 200, res);
     } catch (error) {
-      return next(new AppError("Erreur lors de la connexion", 400));
+      return next(AppError.create("Erreur lors de la connexion", 400, error));
     }
   }) as RequestHandler,
 
@@ -151,9 +155,10 @@ const authController = {
       });
     } catch (error) {
       return next(
-        new AppError(
-          "Erreur lors de la déconnexion, veuillez rééssayer plus tard",
+        AppError.create(
+          "Erreur lors de la déconnexion, veuillez réessayer plus tard",
           400,
+          error,
         ),
       );
     }

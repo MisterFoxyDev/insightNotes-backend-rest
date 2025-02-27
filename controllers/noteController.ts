@@ -2,7 +2,7 @@ import { RequestHandler } from "express";
 import { PrismaClient, Prisma } from "@prisma/client";
 import { formatNote } from "../utils/utils";
 import AppError from "../utils/appError";
-import { generateSummary } from "../utils/aiUtils";
+import { generateSummary, generateTags } from "../utils/aiUtils";
 
 const prisma = new PrismaClient();
 
@@ -10,18 +10,15 @@ const noteController = {
   createNote: (async (req, res, next) => {
     try {
       const { title, content } = req.body;
-
       const userId = req.user?.id;
 
       if (!userId) {
         return next(new AppError("Utilisateur non authentifié", 401));
       }
 
-      // Générer un résumé automatique si le contenu est disponible
       const summary = content ? await generateSummary(content) : null;
-      console.log("Résumé généré lors de la création:", summary);
+      const tags = content ? await generateTags(content, title) : null;
 
-      // 1. Créer d'abord la note sans le résumé
       const newNote = await prisma.note.create({
         data: {
           title,
@@ -32,25 +29,43 @@ const noteController = {
         },
       });
 
-      // 2. Puis mettre à jour le résumé séparément si disponible
       if (summary) {
         try {
-          // Utiliser Prisma.raw pour s'assurer que la valeur est correctement échappée
           await prisma.$executeRaw`
             UPDATE notes 
             SET summary = ${Prisma.sql`${summary}`}
             WHERE id = ${newNote.id}
           `;
-          console.log(
-            "Résumé ajouté à la base de données pour la note:",
-            newNote.id.toString(),
-          );
         } catch (summaryError) {
-          console.error("Erreur lors de l'ajout du résumé:", summaryError);
+          return next(
+            AppError.create(
+              "Erreur lors de la création de la note, merci de réessayer plus tard",
+              400,
+              summaryError,
+            ),
+          );
         }
       }
 
-      // Récupérer la note avec le résumé pour la réponse
+      if (tags) {
+        try {
+          await prisma.note.update({
+            where: { id: newNote.id },
+            data: {
+              tags: tags,
+            },
+          });
+        } catch (tagsError) {
+          return next(
+            AppError.create(
+              "Erreur lors de l'ajout des tags, merci de réessayer plus tard",
+              400,
+              tagsError,
+            ),
+          );
+        }
+      }
+
       const completeNote = await prisma.note.findUnique({
         where: { id: newNote.id },
       });
@@ -62,11 +77,11 @@ const noteController = {
         },
       });
     } catch (error) {
-      console.error("Erreur détaillée:", error);
       return next(
-        new AppError(
+        AppError.create(
           "Erreur lors de la création de la note, merci de réessayer plus tard",
           400,
+          error,
         ),
       );
     }
@@ -141,7 +156,6 @@ const noteController = {
         return next(new AppError("Utilisateur non authentifié", 401));
       }
 
-      // Vérifie si la note existe et appartient à l'utilisateur
       const existingNote = await prisma.note.findFirst({
         where: {
           id: BigInt(id),
@@ -153,42 +167,45 @@ const noteController = {
         return next(new AppError("Note non trouvée ou non autorisée", 404));
       }
 
-      // 1. Mettre à jour la note sans le résumé
       const updateFields: any = { ...updates };
-      delete updateFields.summary; // Supprimer le résumé s'il est présent dans les mises à jour
+      delete updateFields.summary; // Le résumé est géré séparément
 
       const updatedNote = await prisma.note.update({
         where: { id: BigInt(id) },
         data: updateFields,
       });
 
-      // 2. Si le contenu a été modifié, régénérer et mettre à jour le résumé séparément
       if (updates.content && updates.content !== existingNote.content) {
         try {
           const summary = await generateSummary(updates.content);
-          console.log("Résumé généré lors de la mise à jour:", summary);
-
           if (summary) {
-            // Utiliser Prisma.raw pour s'assurer que la valeur est correctement échappée
             await prisma.$executeRaw`
               UPDATE notes 
               SET summary = ${Prisma.sql`${summary}`}
               WHERE id = ${BigInt(id)}
             `;
-            console.log(
-              "Résumé mis à jour dans la base de données pour la note:",
-              id,
-            );
+          }
+
+          const tags = await generateTags(updates.content, existingNote.title);
+          if (tags) {
+            await prisma.note.update({
+              where: { id: BigInt(id) },
+              data: {
+                tags: tags,
+              },
+            });
           }
         } catch (summaryError) {
-          console.error(
-            "Erreur lors de la mise à jour du résumé:",
-            summaryError,
+          return next(
+            AppError.create(
+              "Erreur lors de la mise à jour du résumé ou des tags, merci de réessayer plus tard",
+              400,
+              summaryError,
+            ),
           );
         }
       }
 
-      // Récupérer la note avec le résumé pour la réponse
       const completeNote = await prisma.note.findUnique({
         where: { id: BigInt(id) },
       });
@@ -198,11 +215,11 @@ const noteController = {
         data: { note: formatNote(completeNote || updatedNote) },
       });
     } catch (error) {
-      console.error("Erreur détaillée:", error);
       return next(
-        new AppError(
-          "Erreur lors de la mise à jour de la note, merci de réessayer plus tard",
+        AppError.create(
+          `Erreur lors de la mise à jour de la note, merci de réessayer plus tard`,
           400,
+          error,
         ),
       );
     }
@@ -217,7 +234,6 @@ const noteController = {
         return next(new AppError("Utilisateur non authentifié", 401));
       }
 
-      // Conversion sécurisée de l'ID en BigInt
       let noteId;
       try {
         noteId = BigInt(id);
@@ -235,17 +251,99 @@ const noteController = {
 
       await prisma.note.delete({ where: { id: noteId } });
 
-      // Ajout de logs pour débogage
-      console.log(`Note avec ID ${id} supprimée avec succès`);
-
       res.status(204).send();
     } catch (error) {
-      console.error("Erreur détaillée:", error);
       return next(
-        new AppError(
-          "Erreur lors de la suppression de la note, merci de réessayer plus tard",
+        AppError.create(
+          `Erreur lors de la suppression de la note, merci de réessayer plus tard`,
           400,
+          error,
         ),
+      );
+    }
+  }) as RequestHandler,
+
+  getNotesByTag: (async (req, res, next) => {
+    try {
+      const { tag } = req.params;
+      const userId = req.user?.id;
+
+      if (!userId) {
+        return next(
+          new AppError("Veuillez vous connecter pour accéder à vos notes", 401),
+        );
+      }
+
+      const notes = await prisma.note.findMany({
+        where: {
+          userId,
+          tags: {
+            has: tag,
+          },
+        },
+        orderBy: {
+          created_at: "desc",
+        },
+      });
+
+      res.status(200).json({
+        status: "success",
+        results: notes.length,
+        data: {
+          notes: notes.map(formatNote),
+        },
+      });
+    } catch (error) {
+      return next(
+        AppError.create(
+          `Erreur lors de la recherche des notes par tag, merci de réessayer plus tard`,
+          400,
+          error,
+        ),
+      );
+    }
+  }) as RequestHandler,
+
+  getUserTags: (async (req, res, next) => {
+    try {
+      const userId = req.user?.id;
+
+      if (!userId) {
+        return next(new AppError("Veuillez vous connecter.", 401));
+      }
+
+      const allNotes = await prisma.note.findMany({
+        where: { userId },
+        select: { tags: true },
+      });
+
+      let allTags: string[] = [];
+      for (const note of allNotes) {
+        if (note.tags && note.tags.length > 0) {
+          allTags.push(...note.tags);
+        }
+      }
+
+      const uniqueTags = [...new Set(allTags)].sort();
+
+      const tagCounts = uniqueTags.map((tag) => {
+        const count = allNotes.filter(
+          (note) => note.tags && note.tags.includes(tag),
+        ).length;
+
+        return { tag, count };
+      });
+
+      res.status(200).json({
+        status: "success",
+        results: uniqueTags.length,
+        data: {
+          tags: tagCounts,
+        },
+      });
+    } catch (error) {
+      return next(
+        AppError.create("Erreur lors de la récupération des tags", 400, error),
       );
     }
   }) as RequestHandler,

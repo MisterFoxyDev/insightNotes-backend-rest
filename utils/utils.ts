@@ -4,6 +4,7 @@ export const formatNote = (note: any) => ({
   id: note.id.toString(),
   userId: note.userId.toString(),
   summary: note.summary || null,
+  tags: note.tags || [],
 });
 
 // Fonction utilitaire pour formater la réponse utilisateur

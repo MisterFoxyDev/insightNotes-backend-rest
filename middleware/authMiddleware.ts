@@ -48,6 +48,6 @@ export const protect = async (
     req.user = user;
     next();
   } catch (error) {
-    return next(new AppError("Veuillez vous connecter", 401));
+    return next(AppError.create("Veuillez vous connecter", 401, error));
   }
 };
