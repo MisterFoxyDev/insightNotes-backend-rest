@@ -14,7 +14,7 @@ model User {
   name       String?
   email      String?
   password   String?
-  notes      Note[]   // Relation avec les notes
+  notes      Note[]
 
   @@map("users")
 }
@@ -24,7 +24,8 @@ model Note {
   title      String
   content    String?
   created_at DateTime @default(now()) @db.Timestamptz(6)
-  userId     BigInt   // Foreign key vers User
+  userId     BigInt
+  summary    String?
   user       User     @relation(fields: [userId], references: [id])
 
   @@map("notes")

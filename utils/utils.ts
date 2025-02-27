@@ -3,6 +3,7 @@ export const formatNote = (note: any) => ({
   ...note,
   id: note.id.toString(),
   userId: note.userId.toString(),
+  summary: note.summary || null,
 });
 
 // Fonction utilitaire pour formater la réponse utilisateur

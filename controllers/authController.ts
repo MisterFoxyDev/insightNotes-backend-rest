@@ -1,9 +1,10 @@
 import { RequestHandler } from "express";
 import { PrismaClient } from "@prisma/client";
-import jwt, { SignOptions } from "jsonwebtoken";
+import jwt from "jsonwebtoken";
 import bcrypt from "bcrypt";
 import { formatUserResponse } from "../utils/utils";
 import { Response } from "express";
+import AppError from "../utils/appError";
 
 const prisma = new PrismaClient();
 const JWT_SECRET = process.env.JWT_SECRET || "votre-secret-temporaire";
@@ -18,10 +19,12 @@ const signToken = (userId: bigint) => {
 
 // Configuration des options du cookie
 const cookieOptions = {
-  httpOnly: true, // Empêche l'accès via JavaScript
-  secure: process.env.NODE_ENV === "production", // Cookies sécurisés en production
-  sameSite: "lax" as const, // Protection CSRF
-  maxAge: JWT_COOKIE_EXPIRES_IN * 24 * 60 * 60 * 1000, // 30 jours en millisecondes
+  httpOnly: true,
+  secure: process.env.NODE_ENV === "production",
+  sameSite: (process.env.NODE_ENV === "production" ? "strict" : "lax") as
+    | "strict"
+    | "lax",
+  maxAge: JWT_COOKIE_EXPIRES_IN * 24 * 60 * 60 * 1000, // 7 jours en millisecondes
 };
 
 const createSendToken = (user: any, statusCode: number, res: Response) => {
@@ -41,26 +44,29 @@ const createSendToken = (user: any, statusCode: number, res: Response) => {
 };
 
 const authController = {
-  signup: (async (req, res) => {
+  signup: (async (req, res, next) => {
     try {
       const { email, name, password, confirmPassword } = req.body;
 
       if (!email || !password) {
-        return res.status(400).json({
-          message: "L'email et le mot de passe sont requis",
-        });
+        return next(
+          new AppError("L'email et le mot de passe sont requis", 400),
+        );
       }
 
       if (password !== confirmPassword) {
-        return res.status(400).json({
-          message: "Les mots de passe ne correspondent pas",
-        });
+        return next(
+          new AppError("Les mots de passe ne correspondent pas", 400),
+        );
       }
 
       if (password.length < 6) {
-        return res.status(400).json({
-          message: "Le mot de passe doit contenir au moins 6 caractères",
-        });
+        return next(
+          new AppError(
+            "Le mot de passe doit contenir au moins 6 caractères",
+            400,
+          ),
+        );
       }
 
       const existingUser = await prisma.user.findFirst({
@@ -68,7 +74,7 @@ const authController = {
       });
 
       if (existingUser) {
-        return res.status(400).json({ message: "L'utilisateur existe déjà" });
+        return next(new AppError("L'utilisateur existe déjà", 400));
       }
 
       const hashedPassword = await bcrypt.hash(password, 10);
@@ -85,20 +91,20 @@ const authController = {
       createSendToken(user, 201, res);
     } catch (error) {
       console.error("Erreur lors de la création de l'utilisateur:", error);
-      res
-        .status(400)
-        .json({ message: "Erreur lors de la création de l'utilisateur" });
+      return next(
+        new AppError("Erreur lors de la création de l'utilisateur", 400),
+      );
     }
   }) as RequestHandler,
 
-  login: (async (req, res) => {
+  login: (async (req, res, next) => {
     try {
       const { email, password } = req.body;
 
       if (!email || !password) {
-        return res.status(400).json({
-          message: "L'email et le mot de passe sont requis",
-        });
+        return next(
+          new AppError("L'email et le mot de passe sont requis", 400),
+        );
       }
 
       const user = await prisma.user.findFirst({
@@ -111,37 +117,46 @@ const authController = {
       });
 
       if (!user || !user.password) {
-        return res
-          .status(401)
-          .json({ message: "Email ou mot de passe incorrect" });
+        return next(new AppError("Email ou mot de passe incorrect", 401));
       }
 
       const isPasswordValid = await bcrypt.compare(password, user.password);
 
       if (!isPasswordValid) {
-        return res
-          .status(401)
-          .json({ message: "Email ou mot de passe incorrect" });
+        return next(new AppError("Email ou mot de passe incorrect", 401));
+      }
+
+      // Renouveler le cookie à chaque login pour éviter les attaques de fixation
+      if (req.cookies?.jwt) {
+        res.clearCookie("jwt");
       }
 
       createSendToken(user, 200, res);
     } catch (error) {
-      console.error("Erreur lors de la connexion:", error);
-      res.status(400).json({ message: "Erreur lors de la connexion" });
+      return next(new AppError("Erreur lors de la connexion", 400));
     }
   }) as RequestHandler,
 
-  logout: (async (_req, res) => {
-    // Supprimer le cookie JWT
-    res.cookie("jwt", "", {
-      ...cookieOptions,
-      maxAge: 1, // Expire immédiatement
-    });
+  logout: (async (_req, res, next) => {
+    try {
+      // Supprimer le cookie JWT
+      res.cookie("jwt", "", {
+        ...cookieOptions,
+        maxAge: 1, // Expire immédiatement
+      });
 
-    res.status(200).json({
-      status: "success",
-      message: "Déconnexion réussie",
-    });
+      res.status(200).json({
+        status: "success",
+        message: "Déconnexion réussie",
+      });
+    } catch (error) {
+      return next(
+        new AppError(
+          "Erreur lors de la déconnexion, veuillez rééssayer plus tard",
+          400,
+        ),
+      );
+    }
   }) as RequestHandler,
 };
 
