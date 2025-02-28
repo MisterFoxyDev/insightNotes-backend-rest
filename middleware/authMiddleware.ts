@@ -25,10 +25,7 @@ export const protect = async (
 
     if (!token) {
       return next(
-        new AppError(
-          "Vous n'êtes pas connecté. Veuillez vous connecter pour accéder aux notes",
-          401,
-        ),
+        new AppError("Veuillez vous connecter pour accéder aux notes", 401),
       );
     }
 

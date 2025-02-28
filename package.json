@@ -5,7 +5,11 @@
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
     "start": "ts-node server.ts",
-    "dev": "nodemon server.ts"
+    "dev": "nodemon server.ts",
+    "build": "tsc",
+    "prod": "node dist/server.js",
+    "pm2:dev": "pm2 start ecosystem.config.js",
+    "pm2:prod": "pm2 start ecosystem.config.js --env production"
   },
   "keywords": [],
   "author": "",

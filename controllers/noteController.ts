@@ -303,50 +303,6 @@ const noteController = {
       );
     }
   }) as RequestHandler,
-
-  getUserTags: (async (req, res, next) => {
-    try {
-      const userId = req.user?.id;
-
-      if (!userId) {
-        return next(new AppError("Veuillez vous connecter.", 401));
-      }
-
-      const allNotes = await prisma.note.findMany({
-        where: { userId },
-        select: { tags: true },
-      });
-
-      let allTags: string[] = [];
-      for (const note of allNotes) {
-        if (note.tags && note.tags.length > 0) {
-          allTags.push(...note.tags);
-        }
-      }
-
-      const uniqueTags = [...new Set(allTags)].sort();
-
-      const tagCounts = uniqueTags.map((tag) => {
-        const count = allNotes.filter(
-          (note) => note.tags && note.tags.includes(tag),
-        ).length;
-
-        return { tag, count };
-      });
-
-      res.status(200).json({
-        status: "success",
-        results: uniqueTags.length,
-        data: {
-          tags: tagCounts,
-        },
-      });
-    } catch (error) {
-      return next(
-        AppError.create("Erreur lors de la récupération des tags", 400, error),
-      );
-    }
-  }) as RequestHandler,
 };
 
 export default noteController;

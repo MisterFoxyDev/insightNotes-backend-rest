@@ -5,6 +5,7 @@ import cookieParser from "cookie-parser";
 import userRouter from "./routes/userRoutes";
 import noteRouter from "./routes/noteRoutes";
 import aiRouter from "./routes/aiRoutes";
+import tagRouter from "./routes/tagRoutes";
 import AppError from "./utils/appError";
 import { sendErrorEmail, formatErrorForEmail } from "./utils/emailService";
 
@@ -51,6 +52,7 @@ app.use(cookieParser());
 app.use("/api/v1/users", userRouter);
 app.use("/api/v1/notes", noteRouter);
 app.use("/api/v1/ai", aiRouter);
+app.use("/api/v1/tags", tagRouter);
 
 // Gestion des routes non trouvées
 app.all("*", (req, res, next) => {
@@ -80,10 +82,8 @@ app.use((err: any, req: Request, res: Response, next: NextFunction) => {
 
 // Gestion des erreurs non rattrapées pour éviter les crashs
 process.on("uncaughtException", async (error) => {
-  console.error("❌ Erreur non rattrapée :", error);
-  console.error(
-    "Le serveur continue de fonctionner, mais cette erreur devrait être corrigée",
-  );
+  console.error("❌ Erreur non rattrapée critique:", error);
+  console.error("Une erreur non rattrapée s'est produite");
 
   // Envoi d'un email de notification pour les erreurs
   if (process.env.SMTP_USER && process.env.EMAIL_FROM) {
@@ -97,17 +97,29 @@ process.on("uncaughtException", async (error) => {
       );
     }
   }
+
+  if (process.env.NODE_ENV === "production") {
+    console.error(
+      "🔥 L'application est dans un état instable - Arrêt dans 3 secondes",
+    );
+    setTimeout(() => {
+      process.exit(1);
+    }, 3000);
+  } else {
+    console.warn(
+      "⚠️ Mode développement: le serveur continue malgré l'erreur critique",
+    );
+    console.warn(
+      "Cette erreur devrait être corrigée pour éviter des comportements imprévisibles",
+    );
+  }
 });
 
 process.on("unhandledRejection", async (reason, promise) => {
-  console.error("❌ Promesse rejetée non gérée :", promise);
+  console.error("❌ Promesse rejetée non gérée:", promise);
   console.error("Raison:", reason);
-  console.error(
-    "Le serveur continue de fonctionner, mais cette erreur devrait être corrigée",
-  );
 
   // Envoi d'un email de notification pour les erreurs
-  // Envoyer l'email si SMTP_USER et EMAIL_FROM sont définis
   if (process.env.SMTP_USER && process.env.EMAIL_FROM) {
     try {
       // Convertir la raison en objet Error si ce n'est pas déjà le cas
@@ -121,6 +133,18 @@ process.on("unhandledRejection", async (reason, promise) => {
         emailError,
       );
     }
+  }
+
+  if (process.env.NODE_ENV === "production") {
+    console.error("🔥 Promesse non gérée - Arrêt du serveur dans 3 secondes");
+    setTimeout(() => {
+      process.exit(1);
+    }, 3000);
+  } else {
+    console.warn("⚠️ Mode développement: le serveur continue malgré l'erreur");
+    console.warn(
+      "Cette erreur devrait être corrigée pour assurer la stabilité de l'application",
+    );
   }
 });
 
